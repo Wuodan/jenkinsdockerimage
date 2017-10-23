@@ -1,0 +1,48 @@
+#!/bin/sh
+set -e
+
+cat /etc/group | grep docker
+
+setup_docker_GID(){
+	local WARN=0
+	if [ ! -S /var/run/docker.sock ]; then
+		WARN=1
+		>&2 echo "WARNING: /var/run/docker.sock is not bound from host"
+	else
+		local SOCK_GID="$(ls -aln /var/run/docker.sock | awk '{print $4}')" 
+		if [ "${SOCK_GID}" == 0 ] || [ "${SOCK_GID}" == '' ]; then
+			WARN=1
+			>&2 echo "WARNING: /var/run/docker.sock runs with root group"
+		fi
+		if [ "${WARN}" == 1 ]; then
+			>&2 echo " ==> Jenkins will not be able to run Docker"
+			return
+		fi
+
+		# check if GID does not exist
+		if [ ! grep -Eq "^[^:]+:[^:]*:${SOCK_GID}:.*$" /etc/group ]; then
+			echo "setting docker group GID to ${SOCK_GID}"
+			groupmod -g "${SOCK_GID}" docker
+		else
+			# check if jenkins user is in that group
+			if [ " $(id -G jenkins) " =~ ".*\ ${SOCK_GID}\ .*" ]; then
+				echo "jenkins is group $(getent group "${SOCK_GID}" | cut -d: -f1), nothing to do"
+				return
+			fi
+			# group exists ...have to add jenkins to a random group
+			gpasswd -a jenkins "${SOCK_GID}"
+			>&2 echo "WARNING: added jenkins user to existing group $(getent group "${SOCK_GID}" | cut -d: -f1)."
+			>&2 echo "         ==> Consider changing the GID of your docker group (to a higher value)"
+		fi
+	fi
+}
+
+setup_docker_GID
+
+cat /etc/group | grep docker
+
+# docker volume is initialized as last user in Dockerfile, which is root
+# thus we change that to jenkins
+chown -R jenkins:jenkins /var/jenkins_home
+
+exec su jenkins -c "/bin/tini -s -- /usr/local/bin/jenkins.sh"
