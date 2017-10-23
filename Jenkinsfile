@@ -5,6 +5,7 @@ pipeline {
             steps {
 				sh 'whoami'
                 sh 'mvn --version'
+				sh 'echo $(whoami)
             }
         }
     }
