@@ -3,7 +3,9 @@ pipeline {
     stages {
         stage('build') {
             steps {
+				sh 'whoami'
                 sh 'mvn --version'
+				sh 'echo $(whoami)'
             }
         }
     }
